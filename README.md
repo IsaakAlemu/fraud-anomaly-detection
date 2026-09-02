@@ -100,7 +100,7 @@ fraud-anomaly-detection/
 
 ```bash
 # Clone the repository
-git clone <YOUR_REPO_URL>
+git clone https://github.com/IsaakAlemu/fraud-anomaly-detection.git
 cd fraud-anomaly-detection
 
 # Create and activate virtual environment
