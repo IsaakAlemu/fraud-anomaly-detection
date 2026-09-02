@@ -37,11 +37,11 @@ To prevent data leakage and ensure fair threshold tuning:
 
 For the supervised baseline, training utilized the normal training transactions plus the validation set's fraud examples, ensuring the classifier learned fraud boundaries without ever touching the held-out test set.
 
-### 3. From-Scratch Gaussian Anomaly Engine
-The Gaussian engine assumes independent per-feature normal distributions:
+### 3. From-Scratch Gaussian Anomaly Engine (Product of Univariate Gaussians)
+As in the standard Coursera Anomaly Detection formulation, the model uses an **independent feature Gaussian model** (product of 1D univariate normal distributions) rather than a full covariance multivariate Gaussian model. It estimates per-feature mean and variance independently:
 $$\mu_j = \frac{1}{m} \sum_{i=1}^{m} x_j^{(i)}, \quad \sigma_j^2 = \frac{1}{m-1} \sum_{i=1}^{m} (x_j^{(i)} - \mu_j)^2$$
 
-To prevent catastrophic floating-point underflow when multiplying 29 small probability densities, calculations are performed entirely in **log-space**:
+To prevent catastrophic floating-point underflow when multiplying 29 small probability densities, calculations are performed entirely in **log-space** (summing log-probabilities):
 $$\ln p(x) = \sum_{j=1}^{29} \left[ -\frac{1}{2} \ln(2\pi\sigma_j^2 + \epsilon_0) - \frac{(x_j - \mu_j)^2}{2\sigma_j^2 + \epsilon_0} \right]$$
 A transaction is flagged as anomalous if $\ln p(x) < \epsilon$.
 
@@ -49,7 +49,7 @@ A transaction is flagged as anomalous if $\ln p(x) < \epsilon$.
 
 ## 🚫 What This Is Not (Production Reality Check)
 
-This project is an **educational baseline and API prototype**, not an end-to-end industrial fraud detection engine. A production-grade fraud prevention pipeline in fintech / banking would require:
+This project is an **educational baseline and API prototype**, not an end-to-end industrial fraud prevention system. A production-grade fraud prevention pipeline in fintech / banking would require:
 
 1. **Velocity & Temporal Feature Engineering**: Aggregations across sliding windows (e.g., *number of transactions in the last 10 minutes*, *ratio of current amount to 30-day historical mean*, *geographic displacement velocity between successive card swipes*).
 2. **Gradient Boosting & Sequence Models**: Production systems rely on LightGBM/CatBoost or Graph Neural Networks (GNNs) on transaction graphs rather than univariate Gaussian assumptions.
@@ -65,7 +65,7 @@ fraud-anomaly-detection/
 ├── app/
 │   ├── __init__.py
 │   ├── schemas.py           # Pydantic models for request validation & dual response
-│   ├── anomaly_engine.py    # Multivariate Gaussian density engine (fit/tune/predict/save)
+│   ├── anomaly_engine.py    # Independent Gaussian density engine (fit/tune/predict/save)
 │   ├── baseline_model.py    # Supervised Logistic Regression wrapper
 │   └── main.py              # FastAPI endpoints (/health, /v1/transactions/verify)
 ├── data/

@@ -10,10 +10,11 @@ from app.schemas import GaussianResult, TransactionInput
 
 class GaussianAnomalyEngine:
     """
-    Unsupervised Multivariate Gaussian Anomaly Detection Engine.
+    Unsupervised Independent Gaussian Anomaly Detection Engine (Product of Univariate Gaussians).
 
     Fits independent per-feature mean (mu) and variance (sigma^2) on normal transactions.
-    Scores transactions by summing log-probabilities across features to avoid numerical underflow.
+    Scores transactions by summing log-probabilities across features (log-space product of 1D Gaussians)
+    to avoid numerical underflow.
     Flags transactions as anomalies when log p(x) < epsilon.
     """
 
