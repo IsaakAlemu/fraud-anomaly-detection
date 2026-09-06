@@ -1,60 +1,94 @@
-# Fraud Anomaly Detection & Supervised Baseline Comparison API
+﻿# Fraud Anomaly Detection & Supervised Baseline Comparison API (with MLOps Stack)
 
-An educational machine learning project and REST API comparing a **from-scratch Unsupervised Gaussian Anomaly Detection engine** against a **Supervised Logistic Regression baseline** on the [Kaggle Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
+An enterprise-ready machine learning project and REST API comparing a **from-scratch Unsupervised Gaussian Anomaly Detection engine** against a **Supervised Logistic Regression baseline** on the [Kaggle Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
 
-Built from concepts in the Coursera Machine Learning Specialization (Anomaly Detection lab), this repository focuses on an **honest empirical comparison**: evaluating how an unsupervised statistical density estimator performs when trained strictly on normal transactions versus a supervised classifier that learns from labeled fraud patterns.
-
----
-
-## 📊 Honest Empirical Findings & Evaluation
-
-> **Core Takeaway**: The from-scratch Gaussian anomaly model captures genuine tail-distribution anomaly signal ($F_1 = 0.3868$), but the supervised baseline with proper feature-label weighting is dramatically stronger ($F_1 = 0.8428$). The primary purpose of this project is to demonstrate and explain this exact contrast—not to claim a standalone statistical density model is sufficient for production fraud prevention.
-
-### Test Set Performance Comparison (57,109 Held-Out Transactions)
-
-| Model | Approach | Tuned Decision Boundary | Precision | Recall | $F_1$-Score |
-| :--- | :--- | :--- | :---: | :---: | :---: |
-| **Gaussian Anomaly Detection** | Unsupervised density estimation (from scratch) | $\epsilon = -219.939267$ | **33.84%** | **45.12%** | **0.3868** |
-| **Supervised Baseline** | Logistic Regression (`class_weight='balanced'`) | Probability threshold = $0.998999$ | **87.01%** | **81.71%** | **0.8428** |
-
-*Note: All reported metrics were evaluated on the exact same 57,109 held-out test transactions (containing 246 fraud cases) that were never seen during Gaussian fitting or threshold tuning.*
+This project integrates modern MLOps best practices:
+- **MLflow**: Centralized experiment tracking, metric logging (Precision, Recall, F1, ROC-AUC, PR-AUC), confusion matrices, and serialized model artifacts.
+- **Optuna**: Automated Bayesian hyperparameter optimization over regularization strength (`C`) and solvers (`lbfgs`, `liblinear`), maximizing validation PR-AUC.
+- **Evidently AI**: Automated data drift detection pipeline comparing baseline training distributions against clean test splits and simulated production drift batches.
+- **FastAPI**: Production-grade async inference service providing simultaneous dual-model evaluations and comparative risk diagnostics.
+- **Docker**: Containerized deployment with full reproducibility and automated test verification.
 
 ---
 
-## 🔬 Methodology & Architecture
+## 🏗️ System Architecture
 
-### 1. Dataset & Feature Preprocessing
-- **Dataset**: 284,807 European credit card transactions with 492 fraud cases ($0.1727\%$ fraud rate).
-- **Features**: 28 PCA-transformed numerical components (`V1` to `V28`), `Time`, and `Amount`.
-- **Log Transformation**: Raw transaction amounts are heavily right-skewed with extreme outliers. We compute `LogAmount = np.log1p(Amount)` ($\ln(1 + \text{Amount})$) to ensure safe handling of zero-dollar authorizations and produce a distribution suitable for Gaussian modeling.
-- **Feature Set**: 29 features (`V1`–`V28` + `LogAmount`).
+```mermaid
+flowchart TD
+    subgraph Data["1. Data Ingestion & Preprocessing"]
+        A["Kaggle Credit Card Data<br/>(284,807 transactions)"] --> B["Feature Engineering<br/>LogAmount = log1p(Amount)"]
+        B --> C["Data Split: Train (Normal) / Val / Held-Out Test"]
+    end
 
-### 2. Rigorous Data Splitting
-To prevent data leakage and ensure fair threshold tuning:
-1. **Train Set (170,589 samples)**: $100\%$ normal transactions ($0$ fraud). Used exclusively to fit Gaussian feature parameters ($\mu$ and $\sigma^2$).
-2. **Validation Set (57,109 samples, 246 fraud)**: Mixed set used strictly to sweep 1,000 candidate $\epsilon$ values and select the threshold that maximizes validation $F_1$.
-3. **Test Set (57,109 samples, 246 fraud)**: Strictly held out for final evaluation.
+    subgraph Training["2. Model Training & Optimization"]
+        C --> D["Gaussian Anomaly Engine<br/>(Fit mu, sigma2 on Train; Tune epsilon on Val)"]
+        C --> E["Supervised Logistic Regression<br/>(Class Weight Balanced)"]
+        C --> F["Optuna HPO Study<br/>(20 Trials: Tune C & Solver for PR-AUC)"]
+        F -.-> E
+    end
 
-For the supervised baseline, training utilized the normal training transactions plus the validation set's fraud examples, ensuring the classifier learned fraud boundaries without ever touching the held-out test set.
+    subgraph Tracking["3. MLflow Experiment Tracking"]
+        D --> G["MLflow Run: Gaussian_Anomaly_Detection<br/>(Params, Metrics, Confusion Matrix, JSON Params)"]
+        E --> H["MLflow Run: Supervised_Logistic_Regression<br/>(Params, Metrics, Confusion Matrix, Model PKL)"]
+        F --> I["MLflow Run: Optuna_LogisticRegression_Tuning<br/>(Best Params, PR-AUC, Trials CSV, History Plot)"]
+    end
 
-### 3. From-Scratch Gaussian Anomaly Engine (Product of Univariate Gaussians)
-As in the standard Coursera Anomaly Detection formulation, the model uses an **independent feature Gaussian model** (product of 1D univariate normal distributions) rather than a full covariance multivariate Gaussian model. It estimates per-feature mean and variance independently:
-$$\mu_j = \frac{1}{m} \sum_{i=1}^{m} x_j^{(i)}, \quad \sigma_j^2 = \frac{1}{m-1} \sum_{i=1}^{m} (x_j^{(i)} - \mu_j)^2$$
+    subgraph Inference["4. Dual-Model Inference API"]
+        D & E --> J["FastAPI REST Service<br/>(app/main.py)"]
+        K["Incoming Transaction Payload"] --> J
+        J --> L["Comparative Diagnostic Response<br/>(/v1/transactions/verify)"]
+    end
 
-To prevent catastrophic floating-point underflow when multiplying 29 small probability densities, calculations are performed entirely in **log-space** (summing log-probabilities):
-$$\ln p(x) = \sum_{j=1}^{29} \left[ -\frac{1}{2} \ln(2\pi\sigma_j^2 + \epsilon_0) - \frac{(x_j - \mu_j)^2}{2\sigma_j^2 + \epsilon_0} \right]$$
-A transaction is flagged as anomalous if $\ln p(x) < \epsilon$.
+    subgraph Monitoring["5. Evidently AI Drift Monitoring"]
+        C --> M["Reference Split (Train) vs Test & Shifted Batches"]
+        M --> N["Evidently AI DataDriftPreset<br/>(Detects shifts in V4, V11, LogAmount)"]
+        N --> O["HTML / JSON Drift Reports<br/>(reports/ & MLflow Data_Drift_Monitoring)"]
+    end
+```
 
 ---
 
-## 🚫 What This Is Not (Production Reality Check)
+## 📊 Honest Empirical Findings & Model Comparison
 
-This project is an **educational baseline and API prototype**, not an end-to-end industrial fraud prevention system. A production-grade fraud prevention pipeline in fintech / banking would require:
+> **Core Takeaway**: The from-scratch Gaussian anomaly model captures genuine tail-distribution anomaly signal ($F_1 = 0.3868$, $\text{ROC-AUC} = 0.9598$), but the supervised baseline with balanced class weights is dramatically stronger ($F_1 = 0.8428$, $\text{PR-AUC} = 0.8309$). The dual-model design leverages both: statistical density estimates catch novel zero-day distribution shifts, while supervised decision boundaries detect known fraud signatures.
 
-1. **Velocity & Temporal Feature Engineering**: Aggregations across sliding windows (e.g., *number of transactions in the last 10 minutes*, *ratio of current amount to 30-day historical mean*, *geographic displacement velocity between successive card swipes*).
-2. **Gradient Boosting & Sequence Models**: Production systems rely on LightGBM/CatBoost or Graph Neural Networks (GNNs) on transaction graphs rather than univariate Gaussian assumptions.
-3. **Cost-Sensitive Thresholds**: Business thresholds are tuned to minimize total financial loss (False Negative fraud cost vs. False Positive customer friction / review overhead), rather than raw $F_1$.
-4. **Real-Time Concept Drift Monitoring**: Live distribution tracking (e.g., Population Stability Index, Wasserstein distance) to detect evolving fraud rings and adversarial behavioral shifts.
+### Test Set Performance Comparison (57,109 Held-Out Transactions, 246 Fraud Cases)
+
+| Model | Approach | Tuned Decision Boundary | Precision | Recall | $F_1$-Score | PR-AUC | ROC-AUC |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Gaussian Anomaly Engine** | Unsupervised density estimation (product of 1D Gaussians) | $\epsilon = -219.939267$ | **33.84%** | **45.12%** | **0.3868** | **0.3222** | **0.9598** |
+| **Supervised Baseline** | Logistic Regression (`class_weight='balanced'`) | Probability threshold = $0.998999$ | **87.01%** | **81.71%** | **0.8428** | **0.8309** | **0.9737** |
+
+*All metrics are automatically logged to the `fraud-anomaly-detection` MLflow experiment.*
+
+---
+
+## 🎯 Hyperparameter Optimization with Optuna
+
+Automated hyperparameter tuning in `scripts/tune_hyperparameters.py` conducts a 20-trial study using Tree-structured Parzen Estimator (TPE) sampling to maximize validation **PR-AUC**:
+
+- **Search Space**:
+  - `C`: Log-uniform scale from $10^{-4}$ to $10^2$ ($0.0001 \le C \le 100.0$)
+  - `solver`: Categorical choices `['lbfgs', 'liblinear']`
+- **Study Results**:
+  - **Best Trial**: `#14`
+  - **Best Validation PR-AUC**: **`0.828653`**
+  - **Optimal `C`**: **`5.032430`**
+  - **Optimal `solver`**: **`liblinear`**
+- **MLflow Tracking**: Logs the best parameter set, trial progression history plot (`optuna_study/optimization_history.png`), and complete trials summary table (`optuna_study/optuna_trials.csv`).
+
+---
+
+## 📈 Production Data Drift Monitoring with Evidently AI
+
+Real-world financial transaction distributions evolve over time. The drift detection pipeline in `scripts/monitor_drift.py` utilizes Evidently AI's `DataDriftPreset` to compare baseline distributions against current transaction streams:
+
+1. **Clean Test Split vs. Reference**: Confirms statistical stability ($0/29$ drifted columns, **$0.00\%$ drift**).
+2. **Simulated Shifted Batch vs. Reference**: Injects real-world behavioral changes (scaling transaction amounts and shifting PCA components `V4` and `V11`). The pipeline successfully isolates and flags drift on all 3 target features (**$10.34\%$ column drift**).
+3. **Artifacts Generated**:
+   - Interactive HTML visualization report: `reports/data_drift_report.html`
+   - Structured JSON summary: `reports/data_drift_summary.json`
+   - Persistent logging to MLflow under the `Data_Drift_Monitoring` run.
 
 ---
 
@@ -64,39 +98,42 @@ This project is an **educational baseline and API prototype**, not an end-to-end
 fraud-anomaly-detection/
 ├── app/
 │   ├── __init__.py
-│   ├── schemas.py           # Pydantic models for request validation & dual response
-│   ├── anomaly_engine.py    # Independent Gaussian density engine (fit/tune/predict/save)
-│   ├── baseline_model.py    # Supervised Logistic Regression wrapper
-│   └── main.py              # FastAPI endpoints (/health, /v1/transactions/verify)
+│   ├── schemas.py                 # Pydantic validation & response schemas
+│   ├── anomaly_engine.py          # Independent Gaussian density engine
+│   ├── baseline_model.py          # Supervised Logistic Regression wrapper
+│   └── main.py                    # FastAPI service (/health, /v1/transactions/verify)
 ├── data/
-│   └── creditcard.csv       # Kaggle dataset (git-ignored)
+│   └── creditcard.csv             # Kaggle dataset (git-ignored)
 ├── models/
-│   ├── gaussian_params.json # Serialized mu, sigma2, epsilon, and metrics
-│   └── logistic_model.pkl   # Serialized Logistic Regression artifact & threshold
+│   ├── gaussian_params.json       # Serialized mu, sigma2, epsilon, and metrics
+│   └── logistic_model.pkl         # Serialized Logistic Regression artifact & threshold
 ├── notebooks/
-│   └── 01_eda.ipynb         # Original EDA and experimentation notebook
+│   └── 01_eda.ipynb               # Exploratory data analysis notebook
+├── reports/
+│   ├── data_drift_report.html     # Interactive Evidently AI HTML report
+│   └── data_drift_summary.json    # JSON summary of clean & shifted drift metrics
 ├── scripts/
-│   └── train_and_export.py  # Standalone training & artifact generation script
+│   ├── train_and_export.py        # Model training, evaluation & MLflow logging
+│   ├── tune_hyperparameters.py    # Optuna 20-trial hyperparameter optimization
+│   └── monitor_drift.py           # Evidently AI data drift detection pipeline
 ├── tests/
 │   ├── __init__.py
-│   ├── test_anomaly_engine.py # Math verification, fit, save/load, vector scoring
-│   ├── test_baseline_model.py # Supervised prediction and probability threshold tests
-│   └── test_main.py           # FastAPI integration tests (200 OK, 422 validations)
+│   ├── test_anomaly_engine.py     # Gaussian math verification, fitting & scoring
+│   ├── test_baseline_model.py     # Supervised prediction & probability tests
+│   ├── test_drift.py              # Evidently drift pipeline unit tests
+│   ├── test_main.py               # FastAPI integration & validation tests
+│   └── test_tuning.py             # Optuna objective & parameter output tests
 ├── .gitignore
-├── Dockerfile               # Python 3.11-slim container definition
-├── requirements.txt
-└── README.md
+├── Dockerfile                     # Python 3.11-slim container definition
+├── requirements.txt               # Pinned project dependencies
+└── README.md                      # Comprehensive project documentation
 ```
 
 ---
 
-## 🛠️ Quickstart & Local Setup
+## 🛠️ Quickstart Commands
 
-### 1. Prerequisites
-- Python 3.11 or 3.12
-- Kaggle `creditcard.csv` inside `data/` (optional if using pre-generated model artifacts in `models/`)
-
-### 2. Installation & Virtual Environment
+### 1. Environment Setup
 
 ```bash
 # Clone the repository
@@ -105,6 +142,7 @@ cd fraud-anomaly-detection
 
 # Create and activate virtual environment
 python -m venv venv
+
 # On Windows PowerShell:
 .\venv\Scripts\Activate.ps1
 # On Linux / macOS:
@@ -114,24 +152,53 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. (Optional) Re-run Training & Artifact Export
+### 2. Model Training & MLflow Logging
+
+Train both Gaussian and Supervised models, evaluate metrics, generate confusion matrices, and log runs to MLflow:
 
 ```bash
 python scripts/train_and_export.py
 ```
 
-### 4. Run Test Suite
+### 3. Launch MLflow Tracking UI
+
+Explore experiment runs, metric comparisons, confusion matrix plots, and model artifacts in your browser:
+
+```bash
+mlflow ui
+```
+Open [http://localhost:5000](http://localhost:5000) or [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+### 4. Run Optuna Hyperparameter Optimization
+
+Execute the 20-trial Bayesian optimization study:
+
+```bash
+python scripts/tune_hyperparameters.py
+```
+
+### 5. Run Evidently AI Data Drift Monitoring
+
+Generate interactive HTML and JSON data drift reports and log them to MLflow:
+
+```bash
+python scripts/monitor_drift.py
+```
+
+### 6. Run Test Suite
+
+Execute all 18 automated unit and integration tests:
 
 ```bash
 pytest -v tests
 ```
 
-### 5. Launch FastAPI Server
+### 7. Launch FastAPI Inference Server
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Interactive Swagger documentation is available at: [http://localhost:8000/docs](http://localhost:8000/docs).
+Interactive Swagger documentation: [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ---
 
@@ -230,7 +297,7 @@ curl -X POST "http://localhost:8000/v1/transactions/verify" \
 
 ## 🐳 Docker Deployment
 
-To build and run the service within a minimal container environment:
+Build and run the service within a lightweight container:
 
 ```bash
 # Build Docker image

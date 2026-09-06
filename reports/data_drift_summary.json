@@ -1,0 +1,14 @@
+{
+  "clean_batch": {
+    "dataset_drift": false,
+    "number_of_drifted_columns": 0,
+    "share_of_drifted_columns": 0.0,
+    "number_of_columns": 29
+  },
+  "drifted_batch": {
+    "dataset_drift": false,
+    "number_of_drifted_columns": 3,
+    "share_of_drifted_columns": 0.10344827586206896,
+    "number_of_columns": 29
+  }
+}

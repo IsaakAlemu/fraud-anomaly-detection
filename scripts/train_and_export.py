@@ -11,15 +11,27 @@ This script:
 4. Fits Gaussian parameters (mu, sigma2) on train and tunes epsilon on val.
 5. Trains LogisticRegression(class_weight='balanced') on train + val fraud and tunes threshold on test.
 6. Exports models/gaussian_params.json and models/logistic_model.pkl.
+7. Logs parameters, evaluation metrics, confusion matrix plots, and model artifacts to MLflow.
 """
 
 import json
 import os
 import joblib
+import matplotlib.pyplot as plt
+import mlflow
+import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    average_precision_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
 
 
@@ -30,10 +42,28 @@ def log_gaussian_prob(X: np.ndarray, mu: np.ndarray, sigma2: np.ndarray) -> np.n
     return np.sum(log_p, axis=1)
 
 
+def plot_and_log_confusion_matrix(y_true, y_pred, title: str, filename: str):
+    """Generate confusion matrix plot and log it to MLflow artifacts."""
+    cm = confusion_matrix(y_true, y_pred)
+    fig, ax = plt.subplots(figsize=(6, 5))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Normal (0)", "Fraud (1)"])
+    disp.plot(ax=ax, cmap="Blues", values_format="d")
+    ax.set_title(title)
+    plt.tight_layout()
+    mlflow.log_figure(fig, filename)
+    plt.close(fig)
+
+
 def main():
-    data_path = os.path.join(os.path.dirname(__file__), "..", "data", "creditcard.csv")
-    models_dir = os.path.join(os.path.dirname(__file__), "..", "models")
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = os.path.join(repo_root, "data", "creditcard.csv")
+    models_dir = os.path.join(repo_root, "models")
     os.makedirs(models_dir, exist_ok=True)
+
+    # Set MLflow experiment
+    experiment_name = "fraud-anomaly-detection"
+    mlflow.set_experiment(experiment_name)
+    print(f"MLflow experiment set to '{experiment_name}'")
 
     print(f"Loading data from {data_path}...")
     df = pd.read_csv(data_path)
@@ -57,7 +87,9 @@ def main():
 
     feature_cols = [f"V{i}" for i in range(1, 29)] + ["LogAmount"]
 
-    # 1. Fit Gaussian model
+    # ==========================================
+    # 1. Fit Gaussian Anomaly Detection Model
+    # ==========================================
     mu = train[feature_cols].mean().to_dict()
     sigma2 = train[feature_cols].var().to_dict()
 
@@ -81,16 +113,22 @@ def main():
     # Evaluate Gaussian on held-out test
     test_log_p = log_gaussian_prob(test[feature_cols].to_numpy(), mu_vec, sigma2_vec)
     test_preds_gaussian = (test_log_p < best_epsilon).astype(int)
+    # Higher anomaly score for lower log-probability
+    anomaly_scores_gaussian = -test_log_p
 
     gauss_prec = precision_score(test["Class"], test_preds_gaussian)
     gauss_rec = recall_score(test["Class"], test_preds_gaussian)
     gauss_f1 = f1_score(test["Class"], test_preds_gaussian)
+    gauss_roc_auc = roc_auc_score(test["Class"], anomaly_scores_gaussian)
+    gauss_pr_auc = average_precision_score(test["Class"], anomaly_scores_gaussian)
 
     print("\n--- Gaussian Anomaly Detection Results (Test Set) ---")
-    print(f"Epsilon: {best_epsilon:.6f}")
+    print(f"Epsilon:   {best_epsilon:.6f}")
     print(f"Precision: {gauss_prec:.4f}")
     print(f"Recall:    {gauss_rec:.4f}")
     print(f"F1-Score:  {gauss_f1:.4f}")
+    print(f"ROC-AUC:   {gauss_roc_auc:.4f}")
+    print(f"PR-AUC:    {gauss_pr_auc:.4f}")
 
     gaussian_params = {
         "feature_cols": feature_cols,
@@ -101,6 +139,8 @@ def main():
             "precision": float(gauss_prec),
             "recall": float(gauss_rec),
             "f1": float(gauss_f1),
+            "roc_auc": float(gauss_roc_auc),
+            "pr_auc": float(gauss_pr_auc),
         },
     }
 
@@ -109,7 +149,42 @@ def main():
         json.dump(gaussian_params, f, indent=2)
     print(f"Saved Gaussian params to {gaussian_params_path}")
 
+    # Log Gaussian Model to MLflow
+    with mlflow.start_run(run_name="Gaussian_Anomaly_Detection"):
+        mlflow.log_params({
+            "model_type": "GaussianAnomalyEngine",
+            "scaling_method": "log1p(Amount)",
+            "features_count": len(feature_cols),
+            "threshold": float(best_epsilon),
+            "epsilon": float(best_epsilon),
+            "distribution": "independent_multivariate_gaussian",
+            "eps_numerical": 1e-10,
+            "val_tuning_steps": 1000,
+        })
+        mlflow.log_metrics({
+            "Precision": float(gauss_prec),
+            "Recall": float(gauss_rec),
+            "F1-score": float(gauss_f1),
+            "ROC-AUC": float(gauss_roc_auc),
+            "PR-AUC": float(gauss_pr_auc),
+            "precision": float(gauss_prec),
+            "recall": float(gauss_rec),
+            "f1": float(gauss_f1),
+            "roc_auc": float(gauss_roc_auc),
+            "pr_auc": float(gauss_pr_auc),
+        })
+        plot_and_log_confusion_matrix(
+            test["Class"],
+            test_preds_gaussian,
+            title="Gaussian Anomaly Detection - Confusion Matrix",
+            filename="confusion_matrix.png",
+        )
+        mlflow.log_artifact(gaussian_params_path, artifact_path="model")
+        print("Logged Gaussian Anomaly Detection run to MLflow.")
+
+    # ==========================================
     # 2. Supervised Baseline: Logistic Regression
+    # ==========================================
     sup_train = pd.concat([train, val[val["Class"] == 1]])
     clf = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)
     clf.fit(sup_train[feature_cols], sup_train["Class"])
@@ -130,12 +205,16 @@ def main():
     sup_prec = precision_score(test["Class"], final_preds_sup)
     sup_rec = recall_score(test["Class"], final_preds_sup)
     sup_f1 = f1_score(test["Class"], final_preds_sup)
+    sup_roc_auc = roc_auc_score(test["Class"], test_probs_sup)
+    sup_pr_auc = average_precision_score(test["Class"], test_probs_sup)
 
     print("\n--- Supervised Baseline Logistic Regression Results (Test Set) ---")
     print(f"Threshold: {best_thresh_sup:.6f}")
     print(f"Precision: {sup_prec:.4f}")
     print(f"Recall:    {sup_rec:.4f}")
     print(f"F1-Score:  {sup_f1:.4f}")
+    print(f"ROC-AUC:   {sup_roc_auc:.4f}")
+    print(f"PR-AUC:    {sup_pr_auc:.4f}")
 
     logistic_artifact = {
         "model": clf,
@@ -145,12 +224,49 @@ def main():
             "precision": float(sup_prec),
             "recall": float(sup_rec),
             "f1": float(sup_f1),
+            "roc_auc": float(sup_roc_auc),
+            "pr_auc": float(sup_pr_auc),
         },
     }
 
     logistic_path = os.path.join(models_dir, "logistic_model.pkl")
     joblib.dump(logistic_artifact, logistic_path)
     print(f"Saved Logistic model artifact to {logistic_path}")
+
+    # Log Logistic Regression Model to MLflow
+    with mlflow.start_run(run_name="Supervised_Logistic_Regression"):
+        mlflow.log_params({
+            "model_type": "LogisticRegression",
+            "scaling_method": "log1p(Amount)",
+            "features_count": len(feature_cols),
+            "threshold": float(best_thresh_sup),
+            "max_iter": 1000,
+            "class_weight": "balanced",
+            "random_state": 42,
+            "solver": clf.get_params().get("solver", "lbfgs"),
+            "C": float(clf.get_params().get("C", 1.0)),
+        })
+        mlflow.log_metrics({
+            "Precision": float(sup_prec),
+            "Recall": float(sup_rec),
+            "F1-score": float(sup_f1),
+            "ROC-AUC": float(sup_roc_auc),
+            "PR-AUC": float(sup_pr_auc),
+            "precision": float(sup_prec),
+            "recall": float(sup_rec),
+            "f1": float(sup_f1),
+            "roc_auc": float(sup_roc_auc),
+            "pr_auc": float(sup_pr_auc),
+        })
+        plot_and_log_confusion_matrix(
+            test["Class"],
+            final_preds_sup,
+            title="Supervised Logistic Regression - Confusion Matrix",
+            filename="confusion_matrix.png",
+        )
+        mlflow.log_artifact(logistic_path, artifact_path="model")
+        mlflow.sklearn.log_model(clf, artifact_path="sklearn_model")
+        print("Logged Supervised Logistic Regression run to MLflow.")
 
 
 if __name__ == "__main__":
