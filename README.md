@@ -9,7 +9,7 @@
 [![Tests Passing](https://img.shields.io/badge/Pytest-18%2F18%20Passed-brightgreen.svg?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An enterprise-grade, production-ready machine learning service and dual-model inference REST API comparing a **from-scratch Unsupervised Gaussian Anomaly Detection engine** against a **Supervised Logistic Regression baseline** on the [Kaggle Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
+A machine learning service and dual-model inference REST API comparing a **from-scratch Unsupervised Gaussian Anomaly Detection engine** against a **Supervised Logistic Regression baseline** on the [Kaggle Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud), built around a production-style MLOps stack: experiment tracking, Bayesian hyperparameter tuning, containerized serving, and data drift monitoring.
 
 This repository integrates an end-to-end modern **MLOps stack**:
 - **Centralized Experiment Tracking (`MLflow`)**: Automated parameter logging, evaluation metrics (Precision, Recall, F1, ROC-AUC, PR-AUC), confusion matrices, and serialized model artifacts.
@@ -449,6 +449,18 @@ curl http://localhost:8000/health
 # Stop and remove container
 docker stop fraud-api && docker rm fraud-api
 ```
+
+---
+
+## Known Limitations
+
+This project demonstrates a production-style MLOps workflow, not a deployed production system. Specifically:
+
+- **No authentication or rate limiting** on the FastAPI endpoints — would be required before any real exposure.
+- **Drift monitoring runs on offline batches**, not live inference traffic; a production deployment would need this wired into the actual request stream.
+- **No retraining pipeline** — drift detection currently reports on distribution shift but doesn't trigger or automate model retraining.
+- **No model registry/promotion workflow** — MLflow tracks experiments, but there's no staged promotion process (staging → production) or automated rollback.
+- **Single historical dataset** — the 2013 European cardholder dataset is well-studied but static; real fraud patterns evolve, and this system hasn't been validated against a live or more recent distribution.
 
 ---
 
