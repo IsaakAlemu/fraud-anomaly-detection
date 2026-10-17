@@ -1,4 +1,4 @@
-﻿# Credit Card Fraud Anomaly Detection & Supervised Baseline Comparison API
+# Credit Card Fraud Anomaly Detection & Supervised Baseline Comparison API
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -16,7 +16,7 @@ This repository integrates an end-to-end modern **MLOps stack**:
 - **Bayesian Hyperparameter Tuning (`Optuna`)**: 20-trial Tree-structured Parzen Estimator (TPE) study optimizing regularization strength and solvers for maximum Precision-Recall Area Under the Curve (PR-AUC).
 - **Production Data Drift Detection (`Evidently AI`)**: Automated statistical drift detection pipeline monitoring continuous features and transaction amount distribution shifts across inference batches.
 - **Asynchronous Dual-Inference API (`FastAPI`)**: High-throughput microservice evaluating transactions against both models simultaneously with comparative risk diagnosis.
-- **Containerization & CI/CD Verification (`Docker` & `pytest`)**: Production container definition with 18 automated unit and integration tests guaranteeing 100% test pass rate and backward compatibility.
+- **Containerization & Test Verification (`Docker` & `pytest`)**: Production container definition with 18 automated unit and integration tests guaranteeing 100% test pass rate and backward compatibility.
 
 ---
 
@@ -98,7 +98,7 @@ All models were evaluated on the **exact same held-out test split of 57,109 tran
 
 ## 🎯 Hyperparameter Optimization (Optuna)
 
-Automated hyperparameter tuning is implemented in [`scripts/tune_hyperparameters.py`](file:///C:/Users/isaak/fraud-anomaly-detection/scripts/tune_hyperparameters.py).
+Automated hyperparameter tuning is implemented in [`scripts/tune_hyperparameters.py`](scripts/tune_hyperparameters.py).
 
 ### Study Configuration
 - **Study Name**: `logistic-regression-tuning`
@@ -148,7 +148,7 @@ Navigate to [http://localhost:5000](http://localhost:5000) or [http://127.0.0.1:
 
 ## 📈 Production Data Drift Monitoring (Evidently AI)
 
-Real-world financial distributions shift due to macroeconomic changes, holiday shopping surges, and emerging adversarial fraud vectors. The drift detection engine in [`scripts/monitor_drift.py`](file:///C:/Users/isaak/fraud-anomaly-detection/scripts/monitor_drift.py) automates statistical quality control using Evidently AI.
+Real-world financial distributions shift due to macroeconomic changes, holiday shopping surges, and emerging adversarial fraud vectors. The drift detection engine in [`scripts/monitor_drift.py`](scripts/monitor_drift.py) automates statistical quality control using Evidently AI.
 
 ### Drift Methodology
 - **Reference Dataset**: 170,589 normal transactions from the baseline training distribution.
@@ -177,8 +177,8 @@ Real-world financial distributions shift due to macroeconomic changes, holiday s
 ```
 
 ### Generated Artifacts
-- **Interactive HTML Report**: [`reports/data_drift_report.html`](file:///C:/Users/isaak/fraud-anomaly-detection/reports/data_drift_report.html)
-- **JSON Summary Metrics**: [`reports/data_drift_summary.json`](file:///C:/Users/isaak/fraud-anomaly-detection/reports/data_drift_summary.json)
+- **Interactive HTML Report**: [`reports/data_drift_report.html`](reports/data_drift_report.html)
+- **JSON Summary Metrics**: [`reports/data_drift_summary.json`](reports/data_drift_summary.json)
 
 ---
 
